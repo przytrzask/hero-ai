@@ -20,9 +20,13 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.2.12",
+    "@ai-sdk/react": "^1.2.12",
     "@auth/drizzle-adapter": "^1.7.2",
     "@t3-oss/env-nextjs": "^0.10.1",
+    "ai": "^4.3.18",
     "drizzle-orm": "^0.33.0",
+    "effect": "^3.16.13",
     "geist": "^1.3.0",
     "ioredis": "^5.5.0",
     "jstoxml": "^5.0.2",
