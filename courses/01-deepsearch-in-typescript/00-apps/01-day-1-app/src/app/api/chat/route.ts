@@ -1,6 +1,7 @@
 import { Effect, Context } from "effect";
 import type { Message } from "ai";
 import { streamText, createDataStreamResponse } from "ai";
+import { auth } from "~/server/auth";
 import { chatServiceImpl } from "~/server/services/chat-service";
 
 export const maxDuration = 60;
@@ -14,6 +15,11 @@ class ChatService extends Context.Tag("ChatService")<
   }
 >() {}
 
+class StreamResponse extends Context.Tag("StreamResponse")<
+  StreamResponse,
+  {}
+>() {}
+
 const chatHandler = (messages: Message[]) =>
   Effect.gen(function* () {
     const chat = yield* ChatService;
@@ -22,6 +28,12 @@ const chatHandler = (messages: Message[]) =>
   });
 
 export async function POST(request: Request) {
+  // Check authentication
+  const session = await auth();
+  if (!session?.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = (await request.json()) as {
     messages: Array<Message>;
   };
