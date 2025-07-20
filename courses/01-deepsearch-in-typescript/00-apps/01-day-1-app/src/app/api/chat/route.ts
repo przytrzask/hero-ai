@@ -1,23 +1,30 @@
 import { Effect, Context } from "effect";
 import type { Message } from "ai";
-import { streamText, createDataStreamResponse } from "ai";
+import {
+  streamText,
+  createDataStreamResponse,
+  type StreamTextResult,
+} from "ai";
 import { auth } from "~/server/auth";
 import { chatServiceImpl } from "~/server/services/chat-service";
+import {
+  getUserById,
+  getDailyRequestCount,
+  addRequest,
+} from "~/server/db/queries";
 
 export const maxDuration = 60;
+
+// Rate limit: 50 requests per day for non-admin users
+const DAILY_REQUEST_LIMIT = 50;
 
 class ChatService extends Context.Tag("ChatService")<
   ChatService,
   {
     streamText: (
       messages: Message[],
-    ) => Effect.Effect<ReturnType<typeof streamText>, Error>;
+    ) => Effect.Effect<StreamTextResult<any, any>, Error>;
   }
->() {}
-
-class StreamResponse extends Context.Tag("StreamResponse")<
-  StreamResponse,
-  {}
 >() {}
 
 const chatHandler = (messages: Message[]) =>
@@ -33,6 +40,28 @@ export async function POST(request: Request) {
   if (!session?.user) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  const userId = session.user.id;
+  if (!userId) {
+    return new Response("User ID not found", { status: 400 });
+  }
+
+  // Get user information to check admin status
+  const user = await getUserById(userId);
+  if (!user) {
+    return new Response("User not found", { status: 404 });
+  }
+
+  // Check rate limit (skip for admin users)
+  if (!user.isAdmin) {
+    const dailyRequestCount = await getDailyRequestCount(userId);
+    if (dailyRequestCount >= DAILY_REQUEST_LIMIT) {
+      return new Response("Too Many Requests", { status: 429 });
+    }
+  }
+
+  // Add request to database
+  await addRequest(userId);
 
   const body = (await request.json()) as {
     messages: Array<Message>;

@@ -1,7 +1,9 @@
 import ReactMarkdown, { type Components } from "react-markdown";
+import type { ToolInvocation } from "ai";
+import type { MessagePart } from "~/types";
 
 interface ChatMessageProps {
-  text: string;
+  parts: MessagePart[];
   role: string;
   userName: string;
 }
@@ -38,7 +40,72 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
+const ToolInvocationDisplay = ({
+  toolInvocation,
+}: {
+  toolInvocation: ToolInvocation;
+}) => {
+  const getToolCallStatus = () => {
+    switch (toolInvocation.state) {
+      case "partial-call":
+        return "Preparing tool call...";
+      case "call":
+        return "Calling tool...";
+      case "result":
+        return "Tool completed";
+      default:
+        return "Unknown state";
+    }
+  };
+
+  const getToolCallColor = () => {
+    switch (toolInvocation.state) {
+      case "partial-call":
+        return "text-yellow-400";
+      case "call":
+        return "text-blue-400";
+      case "result":
+        return "text-green-400";
+      default:
+        return "text-gray-400";
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-400">
+          Tool: {toolInvocation.toolName}
+        </span>
+        <span className={`text-sm ${getToolCallColor()}`}>
+          {getToolCallStatus()}
+        </span>
+      </div>
+
+      {toolInvocation.args && (
+        <div className="mb-2">
+          <span className="text-sm font-semibold text-gray-400">
+            Arguments:
+          </span>
+          <pre className="mt-1 overflow-x-auto rounded bg-gray-700 p-2 text-sm">
+            {JSON.stringify(toolInvocation.args, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {toolInvocation.state === "result" && "result" in toolInvocation && (
+        <div>
+          <span className="text-sm font-semibold text-gray-400">Result:</span>
+          <pre className="mt-1 overflow-x-auto rounded bg-gray-700 p-2 text-sm">
+            {JSON.stringify(toolInvocation.result, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   return (
@@ -53,7 +120,21 @@ export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
         </p>
 
         <div className="prose prose-invert max-w-none">
-          <Markdown>{text}</Markdown>
+          {parts.map((part, index) => {
+            switch (part.type) {
+              case "text":
+                return <Markdown key={index}>{part.text}</Markdown>;
+              case "tool-invocation":
+                return (
+                  <ToolInvocationDisplay
+                    key={index}
+                    toolInvocation={part.toolInvocation}
+                  />
+                );
+              default:
+                return null;
+            }
+          })}
         </div>
       </div>
     </div>

@@ -39,6 +39,7 @@ export const users = createTable("user", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
+  requests: many(requests),
 }));
 
 export const accounts = createTable(
@@ -112,6 +113,23 @@ export const verificationTokens = createTable(
   }),
 );
 
+export const requests = createTable("request", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.id),
+  timestamp: timestamp("timestamp", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const requestsRelations = relations(requests, ({ one }) => ({
+  user: one(users, { fields: [requests.userId], references: [users.id] }),
+}));
+
 export declare namespace DB {
   export type User = InferSelectModel<typeof users>;
   export type NewUser = InferInsertModel<typeof users>;
@@ -126,4 +144,7 @@ export declare namespace DB {
   export type NewVerificationToken = InferInsertModel<
     typeof verificationTokens
   >;
+
+  export type Request = InferSelectModel<typeof requests>;
+  export type NewRequest = InferInsertModel<typeof requests>;
 }

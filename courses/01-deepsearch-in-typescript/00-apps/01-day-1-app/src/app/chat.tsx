@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { ChatMessage } from "~/components/chat-message";
 import { ErrorMessage } from "~/components/error-message";
 import { SignInModal } from "~/components/sign-in-modal";
+import type { MessagePart } from "~/types";
+import type { UIMessage } from "ai";
 
 interface ChatProps {
   userName: string;
@@ -18,6 +20,8 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
   const { messages, input, handleInputChange, handleSubmit, isLoading, error } =
     useChat();
 
+  console.log({ messages });
+
   const handleFormSubmit = (e: React.FormEvent) => {
     if (!isAuthenticated) {
       e.preventDefault();
@@ -25,6 +29,21 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
       return;
     }
     handleSubmit(e);
+  };
+
+  const getMessageParts = (message: UIMessage): MessagePart[] => {
+    // If message has parts, use them
+    if (message.parts && message.parts.length > 0) {
+      return message.parts;
+    }
+
+    // Fallback to content if parts are not available
+    if (message.content) {
+      return [{ type: "text", text: message.content }];
+    }
+
+    // Empty fallback
+    return [];
   };
 
   return (
@@ -39,7 +58,7 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
             return (
               <ChatMessage
                 key={index}
-                text={message.content}
+                parts={getMessageParts(message)}
                 role={message.role}
                 userName={userName}
               />
