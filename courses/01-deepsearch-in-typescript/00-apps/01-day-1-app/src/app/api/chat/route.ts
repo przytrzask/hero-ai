@@ -16,7 +16,7 @@ import {
 export const maxDuration = 60;
 
 // Rate limit: 50 requests per day for non-admin users
-const DAILY_REQUEST_LIMIT = 50;
+const DAILY_REQUEST_LIMIT = 5;
 
 class ChatService extends Context.Tag("ChatService")<
   ChatService,
