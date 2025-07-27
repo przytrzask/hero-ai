@@ -1,9 +1,23 @@
-import { Effect } from "effect";
+import { Effect, Data } from "effect";
 import { streamText } from "ai";
 import { z } from "zod";
 import { model } from "~/models";
 import { searchSerper } from "~/serper";
 import type { Message } from "ai";
+
+// ResponseMessage type from AI SDK
+type ResponseMessage = {
+  id: string;
+  role: "assistant" | "tool";
+  content: any;
+  [key: string]: any;
+};
+
+// Chat service error
+class ChatServiceError extends Data.TaggedError("ChatServiceError")<{
+  operation: string;
+  message: string;
+}> {}
 
 export const chatServiceImpl = {
   streamText: (
@@ -11,12 +25,19 @@ export const chatServiceImpl = {
     onFinish?: (opts: {
       text: string;
       finishReason: string;
-      usage: any;
-      response: any;
+      usage: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+      };
+      response: {
+        messages: ResponseMessage[];
+        [key: string]: any;
+      };
     }) => void | Promise<void>,
   ) =>
-    Effect.try({
-      try: () =>
+    Effect.gen(function* () {
+      const stream = yield* Effect.sync(() =>
         streamText({
           model,
           messages,
@@ -60,6 +81,16 @@ Remember to be helpful, accurate, and transparent about when you're using web se
             },
           },
         }),
-      catch: (e) => e as Error,
-    }),
+      );
+      return stream;
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.fail(
+          new ChatServiceError({
+            operation: "streamText",
+            message: `Failed to create text stream: ${error}`,
+          }),
+        ),
+      ),
+    ),
 };
