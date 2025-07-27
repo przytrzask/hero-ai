@@ -6,13 +6,22 @@ import { searchSerper } from "~/serper";
 import type { Message } from "ai";
 
 export const chatServiceImpl = {
-  streamText: (messages: Message[]) =>
+  streamText: (
+    messages: Message[],
+    onFinish?: (opts: {
+      text: string;
+      finishReason: string;
+      usage: any;
+      response: any;
+    }) => void | Promise<void>,
+  ) =>
     Effect.try({
       try: () =>
         streamText({
           model,
           messages,
           maxSteps: 10,
+          onFinish,
           system: `You are a helpful AI assistant with access to real-time web search capabilities.
 
 When users ask questions that require current information, recent events, or specific facts that might have changed since your training data, you should use the searchWeb tool to find up-to-date information.

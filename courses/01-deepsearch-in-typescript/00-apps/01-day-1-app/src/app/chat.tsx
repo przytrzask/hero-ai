@@ -1,26 +1,55 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { ChatMessage } from "~/components/chat-message";
 import { ErrorMessage } from "~/components/error-message";
 import { SignInModal } from "~/components/sign-in-modal";
 import type { MessagePart } from "~/types";
+import { isNewChatCreated } from "~/types";
 import type { UIMessage } from "ai";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
+  chatId?: string;
 }
 
-export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
+export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
+  const router = useRouter();
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, error } =
-    useChat();
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    error,
+    data,
+  } = useChat({
+    body: {
+      chatId,
+    },
+    onFinish: (message, { usage, finishReason }) => {
+      // Handle any cleanup if needed
+      console.log("Chat finished:", { usage, finishReason });
+    },
+  });
 
-  console.log({ messages });
+  // Handle new chat creation by monitoring the data stream
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const latestData = data[data.length - 1];
+      // Use type guard to check if the data is NewChatCreatedData
+      if (isNewChatCreated(latestData)) {
+        // Redirect to the new chat URL
+        router.replace(`/?chatId=${latestData.chatId}`);
+      }
+    }
+  }, [data, router]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     if (!isAuthenticated) {
