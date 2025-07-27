@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
+import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { ErrorMessage } from "~/components/error-message";
 import { SignInModal } from "~/components/sign-in-modal";
@@ -14,7 +15,8 @@ import type { Message } from "ai";
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
-  chatId?: string;
+  chatId: string;
+  isNewChat: boolean;
   initialMessages?: Message[];
 }
 
@@ -22,6 +24,7 @@ export const ChatPage = ({
   userName,
   isAuthenticated,
   chatId,
+  isNewChat,
   initialMessages,
 }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
@@ -38,6 +41,7 @@ export const ChatPage = ({
   } = useChat({
     body: {
       chatId,
+      isNewChat,
     },
     initialMessages,
     onFinish: (message, { usage, finishReason }) => {
@@ -85,38 +89,44 @@ export const ChatPage = ({
   return (
     <>
       <div className="flex flex-1 flex-col">
-        <div
-          className="mx-auto w-full max-w-[65ch] flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500"
-          role="log"
-          aria-label="Chat messages"
+        <StickToBottom
+          className="relative mx-auto w-full max-w-[65ch] flex-1 overflow-auto [&>div]:scrollbar-thin [&>div]:scrollbar-track-gray-800 [&>div]:scrollbar-thumb-gray-600 [&>div]:hover:scrollbar-thumb-gray-500"
+          resize="smooth"
+          initial="smooth"
         >
-          {messages.map((message, index) => {
-            return (
-              <ChatMessage
-                key={index}
-                parts={getMessageParts(message)}
-                role={message.role}
-                userName={userName}
+          <StickToBottom.Content
+            className="flex flex-col p-4"
+            role="log"
+            aria-label="Chat messages"
+          >
+            {messages.map((message, index) => {
+              return (
+                <ChatMessage
+                  key={index}
+                  parts={getMessageParts(message)}
+                  role={message.role}
+                  userName={userName}
+                />
+              );
+            })}
+            {isLoading && (
+              <div className="flex items-center gap-2 text-gray-400">
+                <Loader2 className="size-4 animate-spin" />
+                <span>AI is thinking...</span>
+              </div>
+            )}
+            {error && (
+              <ErrorMessage
+                message={
+                  error.message.includes("401") ||
+                  error.message.includes("Unauthorized")
+                    ? "Please sign in to continue chatting."
+                    : error.message
+                }
               />
-            );
-          })}
-          {isLoading && (
-            <div className="flex items-center gap-2 text-gray-400">
-              <Loader2 className="size-4 animate-spin" />
-              <span>AI is thinking...</span>
-            </div>
-          )}
-          {error && (
-            <ErrorMessage
-              message={
-                error.message.includes("401") ||
-                error.message.includes("Unauthorized")
-                  ? "Please sign in to continue chatting."
-                  : error.message
-              }
-            />
-          )}
-        </div>
+            )}
+          </StickToBottom.Content>
+        </StickToBottom>
 
         <div className="border-t border-gray-700">
           <form

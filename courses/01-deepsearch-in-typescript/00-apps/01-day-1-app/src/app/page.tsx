@@ -11,18 +11,25 @@ export default async function HomePage({
 }: {
   searchParams: Promise<{ chatId: string }>;
 }) {
-  const { chatId } = await searchParams;
+  const { chatId: paramChatId } = await searchParams;
 
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
   const userId = session?.user?.id;
 
+  // Always have a chatId - either from params or generate new one
+  const chatId = paramChatId || crypto.randomUUID();
+  const isNewChat = !paramChatId;
+
   // Only fetch chats if user is authenticated
   const chats = userId ? await getChats({ userId }) : [];
 
-  // Fetch specific chat if chatId is provided and user is authenticated
-  const chat = chatId && userId ? await getChat({ userId, chatId }) : null;
+  // Fetch specific chat if chatId is from params and user is authenticated
+  const chat =
+    paramChatId && userId
+      ? await getChat({ userId, chatId: paramChatId })
+      : null;
 
   // Map database messages to AI SDK format
   const initialMessages: Message[] =
@@ -37,6 +44,8 @@ export default async function HomePage({
         content: "",
       };
     }) ?? [];
+
+  console.log({ chatId });
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -89,9 +98,11 @@ export default async function HomePage({
       </div>
 
       <ChatPage
+        key={chatId}
         userName={userName}
         isAuthenticated={isAuthenticated}
         chatId={chatId}
+        isNewChat={isNewChat}
         initialMessages={initialMessages}
       />
     </div>

@@ -81,14 +81,14 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     messages: Array<Message>;
-    chatId?: string;
+    chatId: string;
+    isNewChat: boolean;
   };
 
-  const { messages, chatId } = body;
+  const { messages, chatId, isNewChat } = body;
 
-  // Generate chatId if not provided
-  const isNewChat = !chatId;
-  const finalChatId = chatId || crypto.randomUUID();
+  // Use the provided chatId (always a string now)
+  const finalChatId = chatId;
 
   // Create chat title from first user message (fallback to "New Chat")
   const firstUserMessage = messages.find((m) => m.role === "user");
