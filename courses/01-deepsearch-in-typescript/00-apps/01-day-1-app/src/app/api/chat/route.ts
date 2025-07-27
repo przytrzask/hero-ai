@@ -139,6 +139,7 @@ export async function POST(request: Request) {
       const stream = await Effect.runPromise(runnable);
       stream.mergeIntoDataStream(dataStream);
     },
+
     onError: (e) => {
       console.error(e);
       return "Oops, an error occurred!";

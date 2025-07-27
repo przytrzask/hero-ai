@@ -79,7 +79,7 @@ export const upsertChat = async (opts: {
       const messageInserts = messageList.map((message, index) => ({
         chatId,
         role: message.role,
-        parts: message.content ? [{ text: message.content }] : [],
+        parts: message.parts,
         order: index,
       }));
 
@@ -90,10 +90,7 @@ export const upsertChat = async (opts: {
   });
 };
 
-export const getChat = async (opts: {
-  userId: string;
-  chatId: string;
-}): Promise<(DB.Chat & { messages: DB.Message[] }) | null> => {
+export const getChat = async (opts: { userId: string; chatId: string }) => {
   const { userId, chatId } = opts;
 
   const chat = await db.query.chats.findFirst({
@@ -105,7 +102,18 @@ export const getChat = async (opts: {
     },
   });
 
-  return chat || null;
+  if (!chat) {
+    return null;
+  }
+
+  return {
+    ...chat,
+    messages: chat.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.parts,
+    })),
+  };
 };
 
 export const getChats = async (opts: {

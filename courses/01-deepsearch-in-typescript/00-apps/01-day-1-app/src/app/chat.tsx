@@ -9,15 +9,21 @@ import { ErrorMessage } from "~/components/error-message";
 import { SignInModal } from "~/components/sign-in-modal";
 import type { MessagePart } from "~/types";
 import { isNewChatCreated } from "~/types";
-import type { UIMessage } from "ai";
+import type { Message } from "ai";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId?: string;
+  initialMessages?: Message[];
 }
 
-export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
+export const ChatPage = ({
+  userName,
+  isAuthenticated,
+  chatId,
+  initialMessages,
+}: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
 
@@ -33,6 +39,7 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
     body: {
       chatId,
     },
+    initialMessages,
     onFinish: (message, { usage, finishReason }) => {
       // Handle any cleanup if needed
       console.log("Chat finished:", { usage, finishReason });
@@ -60,7 +67,7 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
     handleSubmit(e);
   };
 
-  const getMessageParts = (message: UIMessage): MessagePart[] => {
+  const getMessageParts = (message: Message): MessagePart[] => {
     // If message has parts, use them
     if (message.parts && message.parts.length > 0) {
       return message.parts;

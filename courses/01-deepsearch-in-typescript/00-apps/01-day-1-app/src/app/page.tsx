@@ -3,15 +3,8 @@ import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
-
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
-
-const activeChatId = "1";
+import { getChats, getChat } from "~/server/db/queries.ts";
+import type { Message, UIMessage } from "ai";
 
 export default async function HomePage({
   searchParams,
@@ -23,6 +16,27 @@ export default async function HomePage({
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+  const userId = session?.user?.id;
+
+  // Only fetch chats if user is authenticated
+  const chats = userId ? await getChats({ userId }) : [];
+
+  // Fetch specific chat if chatId is provided and user is authenticated
+  const chat = chatId && userId ? await getChat({ userId, chatId }) : null;
+
+  // Map database messages to AI SDK format
+  const initialMessages: Message[] =
+    chat?.messages?.map((msg) => {
+      return {
+        id: msg.id,
+        // msg.role is typed as string, so we need to cast it to the correct type
+        role: msg.role as "user" | "assistant",
+        // msg.content actually contains the parts from the database
+        parts: msg.content as Message["parts"],
+        // Content will be generated from parts by the AI SDK
+        content: "",
+      };
+    }) ?? [];
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -49,7 +63,7 @@ export default async function HomePage({
                 <Link
                   href={`/?chatId=${chat.id}`}
                   className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === activeChatId
+                    chat.id === chatId
                       ? "bg-gray-700"
                       : "hover:bg-gray-750 bg-gray-800"
                   }`}
@@ -78,6 +92,7 @@ export default async function HomePage({
         userName={userName}
         isAuthenticated={isAuthenticated}
         chatId={chatId}
+        initialMessages={initialMessages}
       />
     </div>
   );
