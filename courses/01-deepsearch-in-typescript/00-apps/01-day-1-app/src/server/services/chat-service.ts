@@ -22,6 +22,7 @@ class ChatServiceError extends Data.TaggedError("ChatServiceError")<{
 export const chatServiceImpl = {
   streamText: (
     messages: Message[],
+    traceId?: string,
     onFinish?: (opts: {
       text: string;
       finishReason: string;
@@ -43,6 +44,11 @@ export const chatServiceImpl = {
           messages,
           maxSteps: 10,
           onFinish,
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: "agent",
+            metadata: traceId ? { langfuseTraceId: traceId } : undefined,
+          },
           system: `You are a helpful AI assistant with access to real-time web search capabilities.
 
 When users ask questions that require current information, recent events, or specific facts that might have changed since your training data, you should use the searchWeb tool to find up-to-date information.

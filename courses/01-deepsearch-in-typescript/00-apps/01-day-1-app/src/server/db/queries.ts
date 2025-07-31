@@ -133,7 +133,6 @@ export const getChats = async (opts: {
 };
 
 export class Database extends Effect.Service<Database>()("@piqy/api/database", {
-  _tag: "Database",
   effect: PgDrizzle.make({
     schema: schema,
   }),

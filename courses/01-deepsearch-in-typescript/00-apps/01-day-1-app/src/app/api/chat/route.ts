@@ -6,6 +6,8 @@ import {
   type StreamTextResult,
   appendResponseMessages,
 } from "ai";
+import { Langfuse } from "langfuse";
+import { env } from "~/env";
 
 // ResponseMessage type from AI SDK
 type ResponseMessage = {
@@ -39,6 +41,10 @@ class SaveChatError extends Data.TaggedError("SaveChatError")<{
 }> {}
 import { auth } from "~/server/auth";
 import { chatServiceImpl } from "~/server/services/chat-service";
+
+const langfuse = new Langfuse({
+  environment: env.NODE_ENV,
+});
 import {
   getUserById,
   getDailyRequestCount,
@@ -60,6 +66,7 @@ class ChatService extends Context.Tag("ChatService")<
   {
     streamText: (
       messages: Message[],
+      traceId?: string,
       onFinish?: (opts: {
         text: string;
         finishReason: string;
@@ -72,6 +79,7 @@ class ChatService extends Context.Tag("ChatService")<
 
 const chatHandler = (
   messages: Message[],
+  traceId?: string,
   onFinish?: (opts: {
     text: string;
     finishReason: string;
@@ -87,7 +95,7 @@ const chatHandler = (
 ) =>
   Effect.gen(function* () {
     const chat = yield* ChatService;
-    const stream = yield* chat.streamText(messages, onFinish);
+    const stream = yield* chat.streamText(messages, traceId, onFinish);
     return stream;
   });
 
@@ -128,15 +136,25 @@ const createChatEffect = (
   userId: string,
   chatId: string,
   title: string,
+  traceId?: string,
 ) =>
-  chatHandler(messages, async ({ response }) => {
+  chatHandler(messages, traceId, async ({ response }) => {
     // Run the save effect but don't block the stream
     Effect.runPromise(
       saveChatEffect(userId, chatId, title, messages, response.messages),
     ).catch((error) => {
       console.error("Failed to save chat:", error);
     });
-  }).pipe(Effect.provideService(ChatService, chatServiceImpl));
+
+    // Flush Langfuse trace
+    await langfuse.flushAsync();
+  }).pipe(
+    Effect.provideService(ChatService, {
+      streamText: (messages: Message[], traceId?: string, onFinish?: any) => {
+        return chatServiceImpl.streamText(messages, traceId, onFinish);
+      },
+    }),
+  );
 
 const authenticateEffect = Effect.gen(function* () {
   const session = yield* Effect.tryPromise(() => auth());
@@ -256,10 +274,23 @@ const handleChatRequestEffect = (request: Request) =>
     const { messages, chatId, chatTitle, isNewChat } =
       yield* parseRequestEffect(request);
 
+    // Create Langfuse trace
+    const trace = langfuse.trace({
+      sessionId: chatId,
+      name: "chat",
+      userId: userId,
+    });
+
     // Save initial chat to protect against broken streams
     yield* saveInitialChatEffect(userId, chatId, chatTitle, messages);
 
-    const chatEffect = createChatEffect(messages, userId, chatId, chatTitle);
+    const chatEffect = createChatEffect(
+      messages,
+      userId,
+      chatId,
+      chatTitle,
+      trace.id,
+    );
 
     return {
       chatEffect,
