@@ -54,12 +54,14 @@ export const chatServiceImpl = {
           messages,
           maxSteps: 10,
           onFinish,
+
           experimental_telemetry: {
             isEnabled: true,
             functionId: "agent",
             metadata: traceId ? { langfuseTraceId: traceId } : undefined,
           },
-          system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities.
+          system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities
+          The current date is ${new Date().toLocaleDateString()}.
 
 When users ask questions that require current information, recent events, or specific facts that might have changed since your training data, you should use the searchWeb tool to find up-to-date information.
 
@@ -105,6 +107,7 @@ Remember to be helpful, accurate, and transparent about when you're using web se
                   title: result.title,
                   link: result.link,
                   snippet: result.snippet,
+                  date: result.date,
                 }));
               },
             },
