@@ -1,8 +1,13 @@
+import * as PgDrizzle from "@effect/sql-drizzle/Pg";
+
 import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { db } from "./index";
 import { users, requests, chats, messages } from "./schema";
 import type { DB } from "./schema";
 import type { Message } from "ai";
+import { Effect } from "effect";
+
+import * as schema from "./schema";
 
 export const getUserById = async (id: string): Promise<DB.User | null> => {
   const user = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -126,3 +131,10 @@ export const getChats = async (opts: {
     orderBy: (chats, { desc }) => [desc(chats.updatedAt)],
   });
 };
+
+export class Database extends Effect.Service<Database>()("@piqy/api/database", {
+  _tag: "Database",
+  effect: PgDrizzle.make({
+    schema: schema,
+  }),
+}) {}

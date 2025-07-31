@@ -44,7 +44,11 @@ import {
   getDailyRequestCount,
   addRequest,
   upsertChat,
+  Database,
 } from "~/server/db/queries";
+import { eq } from "drizzle-orm";
+import { users } from "~/server/db/schema";
+import { db } from "~/server/db";
 
 export const maxDuration = 60;
 
@@ -134,7 +138,6 @@ const createChatEffect = (
     });
   }).pipe(Effect.provideService(ChatService, chatServiceImpl));
 
-// Authentication Effect
 const authenticateEffect = Effect.gen(function* () {
   const session = yield* Effect.tryPromise(() => auth());
   if (!session || !session.user?.id) {
@@ -142,17 +145,24 @@ const authenticateEffect = Effect.gen(function* () {
       new UnauthorizedError({ message: "No valid session found" }),
     );
   }
-  return session!.user!.id!; // Safe to assert since we checked above
+  return session!.user!.id; // Safe to assert since we checked above
 }).pipe(
   Effect.catchAll(() =>
     Effect.fail(new UnauthorizedError({ message: "Authentication failed" })),
   ),
 );
 
-// User validation and rate limiting Effect
 const validateUserEffect = (userId: string) =>
   Effect.gen(function* () {
-    const user = yield* Effect.tryPromise(() => getUserById(userId));
+    const db = yield* Database;
+    const user = yield* db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    console.log("user", user);
+
     if (!user) {
       yield* Effect.fail(
         new UserNotFoundError({
@@ -162,8 +172,7 @@ const validateUserEffect = (userId: string) =>
       );
     }
 
-    // Check rate limit (skip for admin users)
-    if (!user!.isAdmin) {
+    if (!user[0]!.isAdmin) {
       const dailyRequestCount = yield* Effect.tryPromise(() =>
         getDailyRequestCount(userId),
       );
@@ -262,6 +271,7 @@ const handleChatRequestEffect = (request: Request) =>
 export async function POST(request: Request) {
   const result = await Effect.runPromise(
     handleChatRequestEffect(request).pipe(
+      Effect.provideService(Database, db),
       Effect.catchTags({
         UnauthorizedError: (error) => {
           console.error("Authorization failed:", error.message);
