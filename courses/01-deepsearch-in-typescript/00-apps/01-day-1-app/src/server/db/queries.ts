@@ -1,13 +1,11 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-
 import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { db } from "./index";
 import { users, requests, chats, messages } from "./schema";
 import type { DB } from "./schema";
 import type { Message } from "ai";
-import { Effect } from "effect";
-
-import * as schema from "./schema";
+import * as PgDrizzle from "@effect/sql-drizzle/Pg";
+import { PgClient } from "@effect/sql-pg";
+import { Cause, Config, Console, Effect, Layer } from "effect";
 
 export const getUserById = async (id: string): Promise<DB.User | null> => {
   const user = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -132,8 +130,14 @@ export const getChats = async (opts: {
   });
 };
 
-export class Database extends Effect.Service<Database>()("@piqy/api/database", {
-  effect: PgDrizzle.make({
-    schema: schema,
-  }),
-}) {}
+const PgLive = PgClient.layerConfig({
+  database: Config.succeed("ai-app-template"),
+  username: Config.succeed("postgres"),
+  host: Config.succeed("localhost"),
+  port: Config.succeed(5432),
+  password: Config.redacted("POSTGRES_PW"),
+});
+
+const DrizzleLive = PgDrizzle.layer.pipe(Layer.provide(PgLive));
+
+export const Database = Layer.mergeAll(PgLive, DrizzleLive);

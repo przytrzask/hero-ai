@@ -45,8 +45,6 @@ export default async function HomePage({
       };
     }) ?? [];
 
-  console.log({ chatId });
-
   return (
     <div className="flex h-screen bg-gray-950">
       {/* Sidebar */}

@@ -1,11 +1,83 @@
-import { Effect, Data } from "effect";
+import { Effect, Data, Context } from "effect";
 import { streamText } from "ai";
 import { z } from "zod";
 import { model } from "~/models";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/scraper";
 import { cacheWithRedis } from "~/server/redis/redis";
-import type { Message } from "ai";
+import type { Message, StreamTextResult, ToolSet } from "ai";
+
+export const system = `You are a helpful AI assistant with access to real-time web search capabilities. 
+The current date and time is ${new Date().toLocaleString()}. When answering questions:
+
+1. Always search the web for up-to-date information when relevant
+2. ALWAYS format URLs as markdown links using the format [title](url)
+3. Be thorough but concise in your responses
+4. If you're unsure about something, search the web to verify
+5. When providing information, always include the source where you found it using markdown links
+6. Never include raw URLs - always use markdown link format
+7. When users ask for up-to-date information, use the current date to provide context about how recent the information is
+8. IMPORTANT: After finding relevant URLs from search results, ALWAYS use the scrapePages tool to get the full content of those pages. Never rely solely on search snippets.
+
+Your workflow should be:
+1. Use searchWeb to find 5 relevant URLs from diverse sources (news sites, blogs, official documentation, etc.)
+2. Select 4-6 of the most relevant and diverse URLs to scrape
+3. Use scrapePages to get the full content of those URLs
+4. Use the full content to provide detailed, accurate answers
+
+Remember to:
+- Always scrape multiple sources (4-6 URLs) for each query
+- Choose diverse sources (e.g., not just news sites or just blogs)
+- Prioritize official sources and authoritative websites
+- Use the full content to provide comprehensive answers`;
+
+export const tools: ToolSet = {
+  searchWeb: {
+    parameters: z.object({
+      query: z.string().describe("The query to search the web for"),
+    }),
+    execute: async ({ query }, { abortSignal }) => {
+      const results = await searchSerper({ q: query, num: 10 }, abortSignal);
+
+      return results.organic.map((result) => ({
+        title: result.title,
+        link: result.link,
+        snippet: result.snippet,
+        date: result.date,
+      }));
+    },
+  },
+  scrapePages: {
+    parameters: z.object({
+      urls: z
+        .array(z.string().url())
+        .describe("Array of URLs to scrape for full content"),
+    }),
+    execute: async ({ urls }) => {
+      const result = await cachedScrapePages(urls);
+
+      if (result.success) {
+        return result.results.map((r) => ({
+          url: r.url,
+          success: r.result.success,
+          content: r.result.success ? r.result.data : undefined,
+          error: !r.result.success ? (r.result as any).error : undefined,
+        }));
+      } else {
+        return {
+          success: false,
+          error: result.error,
+          results: result.results.map((r) => ({
+            url: r.url,
+            success: r.result.success,
+            content: r.result.success ? r.result.data : undefined,
+            error: !r.result.success ? (r.result as any).error : undefined,
+          })),
+        };
+      }
+    },
+  },
+};
 
 // ResponseMessage type from AI SDK
 type ResponseMessage = {
@@ -60,92 +132,8 @@ export const chatServiceImpl = {
             functionId: "agent",
             metadata: traceId ? { langfuseTraceId: traceId } : undefined,
           },
-          system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities
-          The current date is ${new Date().toLocaleDateString()}.
-
-When users ask questions that require current information, recent events, or specific facts that might have changed since your training data, you should use the searchWeb tool to find up-to-date information.
-
-Use the searchWeb tool when:
-- Users ask about recent news, events, or developments
-- Questions require current data (stock prices, weather, sports scores, etc.)
-- Users want to know about the latest trends or updates in any field
-- You need to verify or find specific factual information
-- Users ask about recent releases, updates, or announcements
-
-Use the scrapePages tool when:
-- You need to get the full content of specific web pages found through search
-- Search snippets don't provide enough detail to answer the user's question
-- You need to extract detailed information from articles, blog posts, or documentation
-- The user asks for comprehensive analysis of specific web pages
-- You need to access content that may not be fully represented in search snippets
-
-When using search results:
-- Always cite your sources by mentioning the websites or articles you found
-- Summarize the information clearly and concisely
-- If multiple sources have conflicting information, mention this
-- Provide the most relevant and recent information available
-
-When scraping pages:
-- Only scrape pages that are directly relevant to the user's question
-- Be respectful of robots.txt and website policies
-- Provide clear attribution to the source websites
-- Summarize the scraped content rather than dumping all raw text
-
-Remember to be helpful, accurate, and transparent about when you're using web search and scraping to answer questions.`,
-          tools: {
-            searchWeb: {
-              parameters: z.object({
-                query: z.string().describe("The query to search the web for"),
-              }),
-              execute: async ({ query }, { abortSignal }) => {
-                const results = await searchSerper(
-                  { q: query, num: 10 },
-                  abortSignal,
-                );
-
-                return results.organic.map((result) => ({
-                  title: result.title,
-                  link: result.link,
-                  snippet: result.snippet,
-                  date: result.date,
-                }));
-              },
-            },
-            scrapePages: {
-              parameters: z.object({
-                urls: z
-                  .array(z.string().url())
-                  .describe("Array of URLs to scrape for full content"),
-              }),
-              execute: async ({ urls }) => {
-                const result = await cachedScrapePages(urls);
-
-                if (result.success) {
-                  return result.results.map((r) => ({
-                    url: r.url,
-                    success: r.result.success,
-                    content: r.result.success ? r.result.data : undefined,
-                    error: !r.result.success
-                      ? (r.result as any).error
-                      : undefined,
-                  }));
-                } else {
-                  return {
-                    success: false,
-                    error: result.error,
-                    results: result.results.map((r) => ({
-                      url: r.url,
-                      success: r.result.success,
-                      content: r.result.success ? r.result.data : undefined,
-                      error: !r.result.success
-                        ? (r.result as any).error
-                        : undefined,
-                    })),
-                  };
-                }
-              },
-            },
-          },
+          system,
+          tools,
         }),
       );
       return stream;
@@ -160,3 +148,14 @@ Remember to be helpful, accurate, and transparent about when you're using web se
       ),
     ),
 };
+
+export class ChatService extends Context.Tag("ChatService")<
+  ChatService,
+  {
+    streamText: (
+      messages: Message[],
+      traceId?: string,
+      onFinish?: Parameters<typeof streamText>[0]["onFinish"],
+    ) => Effect.Effect<StreamTextResult<any, any>, Error>;
+  }
+>() {}

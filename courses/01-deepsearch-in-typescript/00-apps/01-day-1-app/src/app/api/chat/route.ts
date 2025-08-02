@@ -1,4 +1,4 @@
-import { Effect, Context, Data } from "effect";
+import { Effect, Context, Data, Schedule } from "effect";
 import type { Message } from "ai";
 import {
   streamText,
@@ -40,7 +40,7 @@ class SaveChatError extends Data.TaggedError("SaveChatError")<{
   message: string;
 }> {}
 import { auth } from "~/server/auth";
-import { chatServiceImpl } from "~/server/services/chat-service";
+import { ChatService, chatServiceImpl } from "~/server/services/chat-service";
 
 const langfuse = new Langfuse({
   environment: env.NODE_ENV,
@@ -53,29 +53,64 @@ import {
   Database,
 } from "~/server/db/queries";
 import { eq } from "drizzle-orm";
-import { users } from "~/server/db/schema";
+import { requests, users } from "~/server/db/schema";
 import { db } from "~/server/db";
+import { PgDrizzle } from "@effect/sql-drizzle/Pg";
+import {
+  LayerRedis,
+  RateLimitConfigLive,
+  RedisLive,
+  RedisService,
+  checkRateLimit,
+} from "~/server/services/redis";
 
 export const maxDuration = 60;
 
 // Rate limit: 50 requests per day for non-admin users
 const DAILY_REQUEST_LIMIT = 5;
 
-class ChatService extends Context.Tag("ChatService")<
-  ChatService,
-  {
-    streamText: (
-      messages: Message[],
-      traceId?: string,
-      onFinish?: (opts: {
-        text: string;
-        finishReason: string;
-        usage: any;
-        response: any;
-      }) => void | Promise<void>,
-    ) => Effect.Effect<StreamTextResult<any, any>, Error>;
-  }
->() {}
+// Rate limiting with retry logic - waits for actual reset time
+const rateLimitWithRetries = (config: {
+  maxRequests: number;
+  windowMs: number;
+  maxRetries: number;
+}) =>
+  Effect.gen(function* () {
+    const tryRateLimit = (
+      remainingRetries: number,
+    ): Effect.Effect<
+      {
+        allowed: boolean;
+        remaining: number;
+        resetTime: number;
+        totalHits: number;
+        retryAfter: number;
+      },
+      any,
+      RedisService
+    > =>
+      Effect.gen(function* () {
+        const result = yield* checkRateLimit({
+          maxRequests: config.maxRequests,
+          windowMs: config.windowMs,
+        });
+
+        if (!result.allowed && remainingRetries > 0) {
+          // Wait until rate limit resets - this is the actual time we need to wait
+          console.log(
+            `Rate limit exceeded. Waiting ${result.retryAfter}ms until reset... (${remainingRetries} retries left)`,
+          );
+          yield* Effect.sleep(`${result.retryAfter} millis`);
+
+          // Retry with one less attempt
+          return yield* tryRateLimit(remainingRetries - 1);
+        }
+
+        return result;
+      });
+
+    return yield* tryRateLimit(config.maxRetries);
+  });
 
 const chatHandler = (
   messages: Message[],
@@ -172,7 +207,7 @@ const authenticateEffect = Effect.gen(function* () {
 
 const validateUserEffect = (userId: string) =>
   Effect.gen(function* () {
-    const db = yield* Database;
+    const db = yield* PgDrizzle;
     const user = yield* db
       .select()
       .from(users)
@@ -204,10 +239,9 @@ const validateUserEffect = (userId: string) =>
       }
     }
 
-    // Add request to database
-    yield* Effect.tryPromise(() => addRequest(userId));
+    yield* db.insert(requests).values({ userId }).returning();
 
-    return user!;
+    return user[0]!;
   });
 
 // Parse request body Effect
@@ -274,6 +308,15 @@ const handleChatRequestEffect = (request: Request) =>
     const { messages, chatId, chatTitle, isNewChat } =
       yield* parseRequestEffect(request);
 
+    // Rate limiting with retry logic implemented in route
+    const rateLimitResult = yield* rateLimitWithRetries({
+      maxRequests: 3,
+      windowMs: 120_000,
+      maxRetries: 2,
+    });
+
+    console.log("Rate limit result:", rateLimitResult);
+
     // Create Langfuse trace
     const trace = langfuse.trace({
       sessionId: chatId,
@@ -302,7 +345,9 @@ const handleChatRequestEffect = (request: Request) =>
 export async function POST(request: Request) {
   const result = await Effect.runPromise(
     handleChatRequestEffect(request).pipe(
-      Effect.provideService(Database, db),
+      Effect.provide(Database),
+      Effect.provide(RedisLive),
+
       Effect.catchTags({
         UnauthorizedError: (error) => {
           console.error("Authorization failed:", error.message);
